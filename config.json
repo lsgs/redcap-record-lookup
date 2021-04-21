@@ -1,0 +1,61 @@
+{
+	"name": "Record Lookup",
+	"namespace": "MCRI\\RecordLookup",
+	"authors": [
+		{
+			"name": "Luke Stevens",
+			"email": "luke.stevens@mcri.edu.au",
+			"institution": "Murdoch Children's Research Institute"
+		}
+	],
+	"description": "Adds functionality to the Add / Edit Records page that enables searching for records in the current and/or other projects.<br>Combined results are displayed and an action can be selected:<ul><li>Navigate to an existing record</li><li>Create new record with data from other project</li></ul>",
+    "framework-version": 5,
+    "compatibility": {
+        "redcap-version-min": "9.10.0"
+    },
+	"permissions": [
+        "redcap_add_edit_records_page"
+    ],
+    "enable-every-page-hooks-on-system-pages": false,
+    "project-settings": [
+        {
+            "key": "lookup-config",
+            "name": "Lookup Configuration",
+            "required": true,
+            "type": "sub_settings",
+            "repeatable": true,
+            "sub_settings": [
+                {
+                    "name": "Project to search",
+                    "key": "lookup-project",
+                    "required": true,
+                    "repeatable": false,
+                    "type": "project-id"
+                },
+                {
+                    "key": "lookup-fields",
+                    "name": "Lookup fields",
+                    "required": true,
+                    "type": "sub_settings",
+                    "repeatable": true,
+                    "sub_settings": [
+                        {
+                            "name": "Search field",
+                            "key": "lookup-field",
+                            "required": true,
+                            "repeatable": false,
+                            "type": "field-list"
+                        },
+                        {
+                            "name": "Alternative name in search project<br>Optional: if the field is named differently in the search project specify the name here",
+                            "key": "lookup-alt-name",
+                            "required": false,
+                            "repeatable": false,
+                            "type": "text"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
