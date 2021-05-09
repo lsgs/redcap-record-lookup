@@ -26,11 +26,28 @@
             "repeatable": true,
             "sub_settings": [
                 {
+                    "name": "Source<br>Specify one of your REDCap projects *OR* the name of an external connection",
+                    "key": "lookup-source-header",
+                    "type": "descriptive"
+                },
+                {
                     "name": "Project to search",
                     "key": "lookup-project",
-                    "required": true,
+                    "required": false,
                     "repeatable": false,
                     "type": "project-id"
+                },
+                {
+                    "name": "External connection<br>(contact admistrator for details)",
+                    "key": "lookup-connection",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Lookup Fields",
+                    "key": "lookup-fields-header",
+                    "type": "descriptive"
                 },
                 {
                     "key": "lookup-fields",
@@ -54,6 +71,66 @@
                             "type": "text"
                         }
                     ]
+                }
+            ]
+        }
+    ],
+    "system-settings": [
+        {
+            "key": "external-connections",
+            "name": "External connections",
+            "required": false,
+            "type": "sub_settings",
+            "repeatable": true,
+            "sub_settings": [
+                {
+                    "name": "Name of connection",
+                    "key": "ext-conn-name",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Host",
+                    "key": "ext-conn-host",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Port",
+                    "key": "ext-conn-port",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Database",
+                    "key": "ext-conn-db",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Username",
+                    "key": "ext-conn-user",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "Password",
+                    "key": "ext-conn-pw",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "text"
+                },
+                {
+                    "name": "SQL Query<br>Parameterised query with parameters for select list column names (comma-separated) and where clause<br>E.g. select id, ? from the_table where ? order by id",
+                    "key": "ext-conn-sql",
+                    "required": false,
+                    "repeatable": false,
+                    "type": "textarea"
                 }
             ]
         }

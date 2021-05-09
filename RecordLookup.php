@@ -6,7 +6,9 @@
 
 namespace MCRI\RecordLookup;
 
+use ExternalModules\ExternalModules;
 use ExternalModules\AbstractExternalModule;
+use ExternalModules\StatementResult;
 
 class RecordLookup extends AbstractExternalModule {
     protected $searchFields;
@@ -122,7 +124,7 @@ class RecordLookup extends AbstractExternalModule {
                             columnDefs: [ {
                                 targets: 0,
                                 render: function ( celldata, type, row ) {
-                                    var src = <?=$jsObjectName?>.projects[celldata];
+                                    var src = <?=$jsObjectName?>.sources[celldata];
                                     return '<span class="text-muted">'+src+'</span>';
                                 }
                             }, {
@@ -213,32 +215,51 @@ class RecordLookup extends AbstractExternalModule {
         $this->searchPlaces = array();
         echo '<table role="presentation" class="form_border" width="100%"><tbody><tr><td class="header" colspan="2" style="font-weight:normal;padding:10px 5px;color:#800000;font-size:13px;"><i class="fas fa-cube mr-1"></i>Record Lookup</td></tr>';
         foreach($settings as $searchPlace) {
-            $thisProj = ($searchPlace['lookup-project']==$Proj->project_id) ? $Proj : new \Project($searchPlace['lookup-project']);
+            $lookupProject = $searchPlace['lookup-project'];
+            $lookupConn = $searchPlace['lookup-connection'];
+            if (!empty($lookupProject)) {
+                $thisProj = ($searchPlace['lookup-project']==$Proj->project_id) ? $Proj : new \Project($searchPlace['lookup-project']);
+                $lookupConn = '';
+            }
+            if (empty($lookupProject) && empty($lookupConn)) continue;
             foreach ($searchPlace['lookup-fields'] as $lf) {
                 $lfName = array_key_exists('lookup-alt-name',$lf) && $lf['lookup-alt-name']!=''
                         ? $lf['lookup-alt-name']
                         : $lf['lookup-field'];
                 $this->searchFields[$lf['lookup-field']][] = array(
                     'project' => $thisProj,
+                    'connection' => $lookupConn,
                     'field-source' => $lf['lookup-field'],
                     'field-dest' => $lfName,
                 );
-                $this->searchPlaces[$lf['lookup-field']]['projects'][] = array('project_id'=>$thisProj->project_id,'field'=>$lfName);
+                $source = (isset($thisProj)) ? $thisProj->project_id : $lookupConn;
+                $this->searchPlaces[$lf['lookup-field']]['sources'][] = array('source'=>$source,'field'=>$lfName);
             }
+            unset($thisProj);
         }
 
         if (count($this->searchFields)) {
-            $projects = array();
+            $sources = array();
+            $lastSF = array_key_last($this->searchFields);
             foreach ($this->searchFields as $sfName => $sfSpec) {
+                $and = ($sfName===$lastSF) ? '' : '<span class="text-muted ml-2" style="font-size:75%">AND</span>';
                 $label = substr(\filter_tags($Proj->metadata[$sfName]['element_label'], false), 0, 30);
                 $fieldProjects = array();
                 foreach ($sfSpec as $sp) {
-                    $projects[$sp['project']->project_id] = $sp['project']->project['app_title'];
-                    $fieldProjects[] = \filter_tags($sp['project']->project['app_title'], false)." (PID ".$sp['project']->project_id.")";
+                    if (empty($sp['project'])) {
+                        // external db connection
+                        $lookupConn = $sp['connection'];
+                        $sources[$lookupConn] = $lookupConn;
+                        $fieldProjects[] = $lookupConn;
+                    } else {
+                        // redcap project
+                        $sources[$sp['project']->project_id] = $sp['project']->project['app_title'];
+                        $fieldProjects[] = \filter_tags($sp['project']->project['app_title'], false)." (PID ".$sp['project']->project_id.")";
+                    }
                 }
                 echo '<tr>';
-                echo '<td class="labelrc" style="width:275px;padding:4px 8px;">'.$label.'<div class="font-weight-normal text-muted pl-2" style="font-size:75%">'.implode('<br>', $fieldProjects).'</div></td>';
-                echo '<td class="data" style="padding:4px 8px;"><input id="RecordLookupSearch_'.$sfName.'" type="text" size="30" class="x-form-text x-form-field ui-autocomplete-input RecordLookupSearch" /></td>';
+                echo '<td class="labelrc" style="width:275px;padding:4px 8px;">'.$label.'<span class="text-muted font-weight-normal ml-1" style="font-size:75%">contains</span><div class="font-weight-normal text-muted pl-2" style="font-size:75%">'.implode('<br>', $fieldProjects).'</div></td>';
+                echo '<td class="data" style="padding:4px 8px;"><input id="RecordLookupSearch_'.$sfName.'" type="text" size="30" class="x-form-text x-form-field ui-autocomplete-input RecordLookupSearch" />'.$and.'</td>';
                 echo '</tr>';
             }
             echo '<tr>';
@@ -252,7 +273,7 @@ class RecordLookup extends AbstractExternalModule {
         ?>
         <script type="text/javascript">
             <?=$jsObjectName?>.searchPlaces = JSON.parse('<?=\js_escape(\json_encode($this->searchPlaces))?>');
-            <?=$jsObjectName?>.projects = JSON.parse('<?=\js_escape(\json_encode($projects))?>');
+            <?=$jsObjectName?>.sources = JSON.parse('<?=\js_escape(\json_encode($sources))?>');
         </script>
         <?php
     }
@@ -313,82 +334,85 @@ class RecordLookup extends AbstractExternalModule {
 
         // $_POST sent as array of field names and search text
         // field name keys have value as array of projects to search in and field name in that project
-        // array('firstname'=>array('q'=>'abc','projects'=>array(0=>array('project_id'=>'220','field'=>'fname'))))
+        // array('firstname'=>array('q'=>'abc','sources'=>array(0=>array('source'=>'220','field'=>'fname'),1=>array('source'=>'some_ext_db','field'=>'name1'))))
+        // where source is int then assume redcap project, otherwise read system settings for db connection info
 
         // refactor by project
-        $projectLookup = array();
-        $projects = array();
-        foreach ($_POST['search'] as $searchfield => $spec) {
-            foreach ($spec['projects'] as $p) {
-                $projects[$p['project_id']] = null;
+        $sourceLookup = array();
+        $sources = array();
+        foreach ($_POST['search'] as $returnfield => $spec) {
+            foreach ($spec['sources'] as $s) {
+                $sources[$s['source']] = null;
             }
-            foreach (array_keys($projects) as $p) {
-                $projectLookup[$p][$searchfield] = array();
+            foreach (array_keys($sources) as $src) {
+                $sourceLookup[$src][$returnfield] = array();
             }
         }
 
-        foreach ($_POST['search'] as $searchfield => $spec) {
-            $term = $spec['q'];
-            
-            foreach ($spec['projects'] as $project) {
-                $projectLookup[$project['project_id']][$searchfield]['field'] = $project['field'];
-                $projectLookup[$project['project_id']][$searchfield]['q'] = $term;
+        foreach ($_POST['search'] as $returnfield => $spec) {
+            foreach ($spec['sources'] as $source) {
+                $sourceLookup[$source['source']][$returnfield]['lookup_field'] = $source['field'];
+                $sourceLookup[$source['source']][$returnfield]['q'] = $spec['q'];
             }
         }
 
         $results = array();
 
-        foreach ($projectLookup as $pid => $projectSearchSpec) {
-            $projectResults = $this->searchProject($pid, $projectSearchSpec);
-            // format results as per rqts
-            $projectResultsFormatted = array();
-            foreach ($projectResults as $r) {
-                $r[0] = "$pid|".$r[0];
-                $projectResultsFormatted[] = array_merge(array($pid), $r);
+        foreach ($sourceLookup as $src => $sourceSearchSpec) {
+            $sourceResults = $this->searchSource($src, $sourceSearchSpec);
+            // format results as per rqts of data table col 0
+            $sourceResultsFormatted = array();
+            foreach ($sourceResults as $r) {
+                $r[0] = "$src|".$r[0];
+                $sourceResultsFormatted[] = array_merge(array($src), $r);
             }
-            $results = array_merge($results, $projectResultsFormatted);
+            $results = array_merge($results, $sourceResultsFormatted);
         }
 
         return $results;
     }
 
-    protected function searchProject($pid, $projectSearchSpec) {
-        return $this->searchProjectREDCapGetData($pid, $projectSearchSpec);
-//        return $this->searchProjectQuery($pid, $projectSearchSpec);
+    protected function searchSource($src, $sourceSearchSpec) {
+        // where source is int then assume redcap project, otherwise read system settings for db connection info
+        if (\is_int($src)) {
+//            $results = $this->searchREDCapProject_GetData($src, $sourceSearchSpec);
+            $results = $this->searchREDCapProject_Query($src, $sourceSearchSpec);
+        } else {
+            $results = $this->searchExternal($src, $sourceSearchSpec);
+        }
+        return $results;
     }
 
-    protected function searchProjectREDCapGetData($pid, $projectSearchSpec) {
+    protected function searchREDCapProject_GetData($pid, $projectSearchSpec) {
         $filter = '';
         $fields = array();
         
-        foreach ($projectSearchSpec as $returnField => $search) {
-            $fields[] = $search['field'];
-            if (trim($search['q'])!=='') {
-                $filter .= 'contains(['.$search['field'].'],"'.str_replace('"','',$search['q']).'") and ';
+        foreach ($projectSearchSpec as $searchSpec) {
+            $fields[] = $searchSpec['lookup_field'];
+            if (trim($searchSpec['q'])!=='') {
+                $filter .= 'contains(['.$searchSpec['lookup_field'].'],"'.str_replace('"','',$searchSpec['q']).'") and ';
             }
         }
 
-        $resultArray = \REDCap::getData(array(
+        $resultArray = \json_decode(\REDCap::getData(array(
             'project_id' => $pid,
-            'return_format' => 'array',
+            'return_format' => 'json',
             'fields' => $fields,
             'filterLogic' => trim($filter, 'and ')
-        ));
+        )), true);
 
         $results = array();
         foreach ($resultArray as $rec => $resultRec) {
             $recData = array($rec);
-            $evt = key($resultRec);
-            foreach ($projectSearchSpec as $returnField => $search) {
-                $field = $search['field'];
-                $recData[] = (array_key_exists($field, $resultRec[$evt])) ? $resultRec[$evt][$field] : '';
+            foreach ($projectSearchSpec as $searchSpec) {
+                $recData[] = (array_key_exists($searchSpec['lookup_field'], $resultRec)) ? $resultRec[$searchSpec['lookup_field']] : '';
             }
             $results[] = $recData;
         }
         return $results;
     }
 
-    protected function searchProjectQuery($pid, $projectSearchSpec) {
+    protected function searchREDCapProject_Query($pid, $projectSearchSpec) {
         /*select record
         , group_concat(if(field_name='firstname',value,null)) as firstname
         , group_concat(if(field_name='lastname',value,null)) as lastname
@@ -412,11 +436,11 @@ class RecordLookup extends AbstractExternalModule {
         $having = '';
         $wheresub = '';
         foreach ($projectSearchSpec as $returnField => $search) {
-            if (array_key_exists('field', $search)) {
-                $group_concat = "group_concat(if(field_name='".\db_escape($search['field'])."',value,null))";
+            if (array_key_exists('lookup_field', $search)) {
+                $group_concat = "group_concat(if(field_name='".\db_escape($search['lookup_field'])."',value,null))";
                 $select .= ", $group_concat as ".\db_escape($returnField);
                 if ($search['q']!='') {
-                    $wheresub .= " (field_name='".\db_escape($search['field'])."' and value like '%".\db_escape($search['q'])."%') or ";
+                    $wheresub .= " (field_name='".\db_escape($search['lookup_field'])."' and value like '%".\db_escape($search['q'])."%') or ";
                     $having .= "($group_concat like '%".\db_escape($search['q'])."%') and ";
                 }
             } else {
@@ -429,10 +453,64 @@ class RecordLookup extends AbstractExternalModule {
         $sql =  "select record $select from redcap_data where project_id=? and record in (select record from redcap_data where project_id=? and ( $wheresub ) ) group by project_id, event_id, record having $having";
         $q = $this->query($sql, [$pid, $pid]);
 
-        $result = array();
+        $results = array();
         while ($row = $q->fetch_assoc()) {
-            $result[] = array_values($row);
+            $results[] = array_values($row);
         }
-        return $result;
+        return $results;
     }
+
+    protected function searchExternal($src, $searchSpec) {
+        $results = array();
+        
+        $ss = $this->getSystemSettings();
+        
+        for ($i=0; $i<count($ss['external-connections']['system_value']); $i++) {
+            if ($ss['external-connections']['system_value'][$i]!=='true') continue;
+            if ($ss['ext-conn-name']['system_value'][$i]!==$src) continue;
+            $hostname 	= $ss['ext-conn-host']['system_value'][$i];
+            $port       = $ss['ext-conn-port']['system_value'][$i];
+            $db 		= $ss['ext-conn-db']['system_value'][$i];
+            $username 	= $ss['ext-conn-user']['system_value'][$i];
+            $password 	= $ss['ext-conn-pw']['system_value'][$i];
+            $sql      	= $ss['ext-conn-sql']['system_value'][$i];
+            $db_socket  = null;
+            break;
+        }
+
+        $extconn = new \mysqli($hostname, $username, $password, $db, $port, $db_socket);
+        //$extconn = mysqli_connect(remove_db_port_from_hostname($hostname), $username, $password, $db, get_db_port_by_hostname($hostname, $db_socket), $db_socket);
+        if ($extconn->connect_error) {
+            $this->log("Record Lookup could not connect to $src. Check the connection values in the Control Center module settings. ".$extconn->connect_error);
+        }
+
+        $select = '';
+        $where = '';
+        foreach ($searchSpec as $returnField => $search) {
+            $returnField = \db_escape($returnField);
+            $sourceField = (array_key_exists('lookup_field', $search)) ? \db_escape($search['lookup_field']) : 'null';
+            $searchTerm = \db_escape($search['q']);
+            $select .= ",$sourceField as $returnField";
+            if ($search['q']!='') {
+                $where .= "$sourceField like '%$searchTerm%' and ";
+            }
+        }
+
+        $select = trim($select, ',');
+        $where = trim($where, ' and ');
+
+        $sql = \preg_replace('/\?/', $select, $sql, 1);
+        $sql = \preg_replace('/\?/', $where, $sql, 1);
+        
+        $stmt = $extconn->prepare($sql);
+        $stmt->execute();
+        $q = $stmt->get_result();
+        
+        while ($row = $q->fetch_assoc()) {
+            $results[] = array_values($row);
+        }
+        $stmt->close();
+        $extconn->close();
+        return $results;
+	}
 }
