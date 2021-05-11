@@ -481,7 +481,7 @@ class RecordLookup extends AbstractExternalModule {
         $extconn = new \mysqli($hostname, $username, $password, $db, $port, $db_socket);
         //$extconn = mysqli_connect(remove_db_port_from_hostname($hostname), $username, $password, $db, get_db_port_by_hostname($hostname, $db_socket), $db_socket);
         if ($extconn->connect_error) {
-            $this->log("Record Lookup could not connect to $src. Check the connection values in the Control Center module settings. ".$extconn->connect_error);
+            \REDCap::logEvent("Record Lookup could not connect to $src. Check the connection values in the Control Center module settings. ".$extconn->connect_error);
         }
 
         $select = '';
@@ -503,13 +503,17 @@ class RecordLookup extends AbstractExternalModule {
         $sql = \preg_replace('/\?/', $where, $sql, 1);
         
         $stmt = $extconn->prepare($sql);
-        $stmt->execute();
-        $q = $stmt->get_result();
-        
-        while ($row = $q->fetch_assoc()) {
-            $results[] = array_values($row);
+        if ($stmt===false) {
+            \REDCap::logEvent("Error preparing statement for Record Lookup<br>\n$sql<br>\n".print_r($extconn->error_list, true));
+        } else {
+            $stmt->execute();
+            $q = $stmt->get_result();
+            
+            while ($row = $q->fetch_assoc()) {
+                $results[] = array_values($row);
+            }
+            $stmt->close();
         }
-        $stmt->close();
         $extconn->close();
         return $results;
 	}
