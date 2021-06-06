@@ -71,7 +71,7 @@ class RecordLookup extends AbstractExternalModule {
                 console.log(btn);
                 $(btn).hide().parent('td').addClass('spinner');
                 var recordData = [];
-                $(btn).closest('tr').find('td:gt(0)').each(function(i, e){
+                $(btn).closest('tr').find('td:gt(1)').each(function(i, e){
                     recordData.push($(e).text());
                 });
                 $.ajax({
@@ -489,22 +489,23 @@ class RecordLookup extends AbstractExternalModule {
         foreach ($searchSpec as $returnField => $search) {
             $returnField = \db_escape($returnField);
             $sourceField = (array_key_exists('lookup_field', $search)) ? \db_escape($search['lookup_field']) : 'null';
-            $searchTerm = \db_escape($search['q']);
-            $select .= ",$sourceField as $returnField";
-            if ($search['q']!='') {
-                $where .= "$sourceField like '%$searchTerm%' and ";
+            $searchTerm = \db_escape(trim($search['q']));
+            $select .= ", $sourceField as $returnField";
+            if ($searchTerm!='') {
+                $where .= " and $sourceField like '%$searchTerm%' ";
             }
         }
 
-        $select = trim($select, ',');
-        $where = trim($where, ' and ');
+        $select = substr($select, 1);
+        $where = substr($where, 4);
 
         $sql = \preg_replace('/\?/', $select, $sql, 1);
         $sql = \preg_replace('/\?/', $where, $sql, 1);
+        $this->log($sql);
         
         $stmt = $extconn->prepare($sql);
         if ($stmt===false) {
-            \REDCap::logEvent("Error preparing statement for Record Lookup<br>\n$sql<br>\n".print_r($extconn->error_list, true));
+            \REDCap::logEvent("Record Lookup External Module","Error preparing statement for Record Lookup \n$sql \n".print_r($extconn->error_list, true));
         } else {
             $stmt->execute();
             $q = $stmt->get_result();
